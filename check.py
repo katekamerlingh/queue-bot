@@ -20,21 +20,49 @@ def tg(text):
     )
 
 
+def find_form(page):
+    for fr in page.frames:
+        if fr.locator("select").count() >= 2:
+            return fr
+    return None
+
+
+def diagnose(page):
+    print("--- DIAGNOSTIC ---")
+    print("title:", page.title())
+    print("url:", page.url)
+    print("frames:", [f.url for f in page.frames])
+    for fr in page.frames:
+        print(
+            "frame",
+            fr.url[:60],
+            "select:", fr.locator("select").count(),
+            "input:", fr.locator("input").count(),
+            "button:", fr.locator("button").count(),
+        )
+    try:
+        print("text:", page.inner_text("body")[:700].replace("\n", " | "))
+    except Exception as e:
+        print("no text:", e)
+    print("--- END ---")
+
+
 def get_days():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(locale="uk-UA")
         try:
             page.goto(URL, wait_until="networkidle", timeout=60000)
-            selects = page.locator("select")
-            if selects.count() < 2:
+            page.wait_for_timeout(6000)
+            form = find_form(page)
+            if form is None:
+                diagnose(page)
                 raise RuntimeError("Не нашёл выпадающие списки на странице")
 
-            # 1) выбираем услугу (первый непустой пункт)
+            selects = form.locator("select")
             selects.nth(0).select_option(index=1)
             page.wait_for_timeout(4000)
 
-            # 2) читаем список дней
             options = selects.nth(1).locator("option")
             days = []
             for i in range(options.count()):
@@ -47,7 +75,6 @@ def get_days():
                 days.append(text)
             return days
         finally:
-            # для отладки: сохраняем страницу и скриншот
             with open("page.html", "w", encoding="utf-8") as f:
                 f.write(page.content())
             page.screenshot(path="screenshot.png", full_page=True)
